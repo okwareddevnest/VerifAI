@@ -53,23 +53,43 @@ def main():
     st.markdown("""
         <style>
         .main-header {
-            color: #4CAF50;
+            background: linear-gradient(90deg, #4CAF50, #2196F3);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
             font-size: 2.5em;
             font-weight: bold;
             margin-bottom: 1em;
+            text-align: center;
         }
         .subheader {
             color: #7c7c7c;
             font-size: 1.2em;
             margin-bottom: 2em;
+            text-align: center;
         }
         .stTextInput > div > div > input {
             background-color: #2b2b2b;
             color: white;
+            border-radius: 10px;
         }
         .stTextArea > div > div > textarea {
             background-color: #2b2b2b;
             color: white;
+            border-radius: 10px;
+        }
+        .insight-box {
+            background-color: rgba(76, 175, 80, 0.1);
+            border-left: 3px solid #4CAF50;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .source-box {
+            background-color: rgba(33, 150, 243, 0.1);
+            border: 1px solid #2196F3;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -103,6 +123,17 @@ def main():
         3. 🔄 Cross-references sources
         4. 📊 Generates bias report
         """)
+        
+        # Add advanced settings
+        with st.expander("⚙️ Advanced Settings"):
+            st.checkbox("Enable real-time analysis", value=True)
+            st.checkbox("Show source credibility scores", value=True)
+            st.checkbox("Include historical context", value=True)
+            st.selectbox(
+                "Language model",
+                ["Mistral-7B", "GPT-3.5", "Claude-2"],
+                index=0
+            )
     
     # Main content
     st.markdown('<h1 class="main-header">🔍 VerifAI: Media Bias & Fake News Detector</h1>', unsafe_allow_html=True)
@@ -127,11 +158,22 @@ def main():
         with st.spinner("🔄 Analyzing article..."):
             article_data = {"text": text, "title": text[:50] + "..."}
             
+            # Create progress bar
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            # Update progress
+            status_text.text("Finding related articles...")
+            progress_bar.progress(25)
+            
             # Search for related articles
             related_articles = components["searcher"].find_related(
                 article_data,
                 top_k=search_depth
             )
+            
+            status_text.text("Analyzing bias and sentiment...")
+            progress_bar.progress(50)
             
             # Analyze bias
             bias_results = components["bias_detector"].analyze(
@@ -139,8 +181,16 @@ def main():
                 related_articles
             )
             
+            status_text.text("Generating insights...")
+            progress_bar.progress(75)
+            
             # Create tabs for different result sections
-            tabs = st.tabs(["📊 Analysis Results", "🔍 Related Articles", "⚖️ Bias Meter"])
+            tabs = st.tabs([
+                "📊 Analysis Results",
+                "🔍 Related Articles",
+                "⚖️ Bias Meter",
+                "📈 Insights"
+            ])
             
             with tabs[0]:
                 components["results_display"].show_results(
@@ -153,15 +203,75 @@ def main():
                 if related_articles:
                     for article in related_articles:
                         with st.expander(f"📰 {article.get('metadata', {}).get('title', 'Related Article')}"):
-                            st.write(f"🌐 Source: {article.get('metadata', {}).get('domain', 'Unknown')}")
-                            st.write(f"📈 Similarity Score: {article.get('score', 0):.2f}")
-                            st.write(article.get('metadata', {}).get('content', '')[:500] + "...")
-                            if article.get('metadata', {}).get('url'):
-                                st.markdown(f"🔗 [Read full article]({article['metadata']['url']})")
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.markdown(
+                                    f"""
+                                    <div class="source-box">
+                                        <p><strong>🌐 Source:</strong> {article.get('metadata', {}).get('domain', 'Unknown')}</p>
+                                        <p><strong>📈 Relevance Score:</strong> {article.get('final_score', 0):.2f}</p>
+                                        <p>{article.get('metadata', {}).get('content', '')[:500]}...</p>
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True
+                                )
+                            with col2:
+                                if article.get('metadata', {}).get('url'):
+                                    st.markdown(f"🔗 [Read full article]({article['metadata']['url']})")
+                                st.metric(
+                                    "Source Credibility",
+                                    f"{article.get('credibility_score', 0.7):.1%}"
+                                )
                                 
             with tabs[2]:
                 if "bias_score" in bias_results:
                     components["bias_meter"].display_bias_meter(bias_results["bias_score"])
+                    
+            with tabs[3]:
+                # Display key insights
+                st.subheader("🎯 Key Insights")
+                insights = bias_results.get('key_findings', [])
+                for insight in insights:
+                    st.markdown(
+                        f"""
+                        <div class="insight-box">
+                            <p>✨ {insight}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                
+                # Display fact-checking results
+                if bias_results.get('fact_checks'):
+                    st.subheader("✅ Fact Checking Results")
+                    for fact in bias_results['fact_checks']:
+                        cols = st.columns([4, 1])
+                        with cols[0]:
+                            st.info(f"🔍 {fact['claim']}")
+                            st.markdown(f"💡 **Verdict:** {fact['verdict']}")
+                        with cols[1]:
+                            st.metric(
+                                "Confidence",
+                                f"{fact['confidence']:.1%}"
+                            )
+            
+            # Clear progress indicators
+            progress_bar.progress(100)
+            status_text.empty()
+            
+            # Show export options
+            st.markdown("---")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.download_button(
+                    "📥 Download Report",
+                    "Report data...",
+                    "report.pdf"
+                )
+            with col2:
+                st.button("📧 Share Results")
+            with col3:
+                st.button("💾 Save Analysis")
 
 if __name__ == "__main__":
     main()
