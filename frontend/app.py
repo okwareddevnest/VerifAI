@@ -2,6 +2,7 @@ import streamlit as st
 from dotenv import load_dotenv
 import os
 import sys
+from typing import Dict, List
 
 # Add project root to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -40,6 +41,97 @@ def initialize_components():
         "bias_meter": BiasAnalyzer(),
         "results_display": ResultsDisplay()
     }
+
+def generate_report_pdf(article_data: Dict, bias_results: Dict, related_articles: List[Dict]) -> str:
+    """Generate a PDF report of the analysis"""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    import io
+    
+    # Create buffer for PDF
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+    
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        spaceAfter=30
+    )
+    story.append(Paragraph("VerifAI Analysis Report", title_style))
+    story.append(Spacer(1, 12))
+    
+    # Article Text
+    story.append(Paragraph("Analyzed Text", styles["Heading2"]))
+    story.append(Paragraph(article_data.get('text', '')[:500] + "...", styles["Normal"]))
+    story.append(Spacer(1, 12))
+    
+    # Bias Analysis
+    story.append(Paragraph("Bias Analysis", styles["Heading2"]))
+    bias_data = [
+        ["Metric", "Value"],
+        ["Bias Score", f"{bias_results.get('bias_score', 0):.2f}"],
+        ["Political Leaning", bias_results.get('political_leaning', 'Unknown')],
+        ["Overall Sentiment", bias_results.get('sentiment', 'neutral')]
+    ]
+    bias_table = Table(bias_data, colWidths=[200, 300])
+    bias_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 14),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    story.append(bias_table)
+    story.append(Spacer(1, 12))
+    
+    # Key Findings
+    if bias_results.get('key_findings'):
+        story.append(Paragraph("Key Findings", styles["Heading2"]))
+        for finding in bias_results['key_findings']:
+            story.append(Paragraph(f"• {finding}", styles["Normal"]))
+        story.append(Spacer(1, 12))
+    
+    # Recommendations
+    if bias_results.get('recommendations'):
+        story.append(Paragraph("Recommendations", styles["Heading2"]))
+        for rec in bias_results['recommendations']:
+            story.append(Paragraph(f"• {rec}", styles["Normal"]))
+    
+    # Build PDF
+    doc.build(story)
+    pdf_data = buffer.getvalue()
+    buffer.close()
+    return pdf_data
+
+def save_analysis(article_data: Dict, bias_results: Dict, related_articles: List[Dict]) -> None:
+    """Save analysis results to Snowflake database"""
+    try:
+        analysis_id = components["searcher"].snowflake.store_analysis(
+            article_data=article_data,
+            bias_results=bias_results,
+            related_articles=related_articles
+        )
+        return analysis_id
+    except Exception as e:
+        st.error(f"Error saving analysis: {str(e)}")
+        return None
+
+def share_results(analysis_id: str) -> str:
+    """Generate a shareable link for the analysis"""
+    base_url = "https://verifai.app/analysis/"  # Replace with your actual domain
+    return f"{base_url}{analysis_id}"
 
 def main():
     st.set_page_config(
@@ -262,16 +354,35 @@ def main():
             # Show export options
             st.markdown("---")
             col1, col2, col3 = st.columns(3)
+            
+            # Generate report data
+            report_data = generate_report_pdf(article_data, bias_results, related_articles)
+            
             with col1:
                 st.download_button(
-                    "📥 Download Report",
-                    "Report data...",
-                    "report.pdf"
+                    label="📥 Download Report",
+                    data=report_data,
+                    file_name="VerifAI_Analysis_Report.pdf",
+                    mime="application/pdf"
                 )
+            
             with col2:
-                st.button("📧 Share Results")
+                if st.button("📧 Share Results"):
+                    with st.spinner("Generating shareable link..."):
+                        # Save analysis and get ID
+                        analysis_id = save_analysis(article_data, bias_results, related_articles)
+                        if analysis_id:
+                            share_link = share_results(analysis_id)
+                            st.success(f"Share this link: {share_link}")
+                            # Add copy button
+                            st.code(share_link, language=None)
+                            
             with col3:
-                st.button("💾 Save Analysis")
+                if st.button("💾 Save Analysis"):
+                    with st.spinner("Saving analysis..."):
+                        analysis_id = save_analysis(article_data, bias_results, related_articles)
+                        if analysis_id:
+                            st.success(f"Analysis saved successfully! ID: {analysis_id}")
 
 if __name__ == "__main__":
     main()

@@ -236,23 +236,81 @@ class SnowflakeManager:
         finally:
             cursor.close()
     
-    def store_analysis(self, article_id: str, analysis_results: Dict):
-        """Store analysis results"""
+    def store_analysis(self, article_data: Dict, bias_results: Dict, related_articles: List[Dict]) -> str:
+        """Store analysis results in Snowflake"""
         cursor = self.conn.cursor()
         
         try:
+            # Generate unique ID for the analysis
+            analysis_id = os.urandom(16).hex()
+            
+            # Store article
             cursor.execute("""
-            INSERT INTO ANALYSIS_RESULTS 
-            (article_id, bias_score, confidence, sentiment, analysis_data)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO NEWS_ARTICLES (
+                id, title, content, url, domain, created_at
+            ) VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP())
             """, (
-                article_id,
-                analysis_results.get('bias_score', 0.0),
-                analysis_results.get('confidence', 0.0),
-                analysis_results.get('sentiment', 'neutral'),
-                json.dumps(analysis_results)
+                analysis_id,
+                article_data.get('title', ''),
+                article_data.get('text', ''),
+                article_data.get('url', ''),
+                article_data.get('domain', '')
             ))
             
+            # Store analysis results
+            cursor.execute("""
+            INSERT INTO ANALYSIS_RESULTS (
+                article_id,
+                bias_score,
+                political_leaning,
+                sentiment,
+                analysis_data,
+                created_at
+            ) VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP())
+            """, (
+                analysis_id,
+                bias_results.get('bias_score', 0.0),
+                bias_results.get('political_leaning', 'unknown'),
+                bias_results.get('sentiment', 'neutral'),
+                json.dumps(bias_results)
+            ))
+            
+            # Store related articles
+            for article in related_articles:
+                related_id = os.urandom(16).hex()
+                metadata = article.get('metadata', {})
+                
+                cursor.execute("""
+                INSERT INTO NEWS_ARTICLES (
+                    id, title, content, url, domain, created_at
+                ) VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP())
+                """, (
+                    related_id,
+                    metadata.get('title', ''),
+                    metadata.get('content', ''),
+                    metadata.get('url', ''),
+                    metadata.get('domain', '')
+                ))
+                
+                # Store relationship
+                cursor.execute("""
+                INSERT INTO ARTICLE_RELATIONSHIPS (
+                    source_id,
+                    related_id,
+                    similarity_score,
+                    created_at
+                ) VALUES (%s, %s, %s, CURRENT_TIMESTAMP())
+                """, (
+                    analysis_id,
+                    related_id,
+                    article.get('score', 0.0)
+                ))
+            
+            return analysis_id
+            
+        except Exception as e:
+            print(f"Error storing analysis: {str(e)}")
+            raise
         finally:
             cursor.close()
     
