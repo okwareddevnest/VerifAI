@@ -75,7 +75,7 @@ class BiasAnalyzer:
             
     def display_bias_meter(self, bias_score: float):
         """Display the bias meter visualization"""
-        st.subheader("⚖️ Bias Analysis")
+        st.subheader("⚖️ Political Bias Analysis")
         
         # Ensure bias_score is a float and within bounds
         try:
@@ -84,48 +84,105 @@ class BiasAnalyzer:
         except (TypeError, ValueError):
             bias_score = 0.0
             
-        # Create the meter visualization
+        # Define colors for gradient effect
+        colors = {
+            'far_left': '#1E3FCC',    # Deep Blue
+            'left': '#4169E1',        # Royal Blue
+            'center': '#808080',      # Gray
+            'right': '#CD5C5C',       # Indian Red
+            'far_right': '#8B0000'    # Dark Red
+        }
+        
+        # Create dynamic color based on bias score
+        def get_gradient_color(score):
+            if score <= -0.6:
+                return colors['far_left']
+            elif score <= -0.2:
+                return colors['left']
+            elif score <= 0.2:
+                return colors['center']
+            elif score <= 0.6:
+                return colors['right']
+            else:
+                return colors['far_right']
+        
+        # Create the meter visualization with animation
         fig = go.Figure(go.Indicator(
-            mode = "gauge+number",
+            mode = "gauge+number+delta",
             value = bias_score,
             domain = {'x': [0, 1], 'y': [0, 1]},
+            delta = {'reference': 0, 'position': 'top'},
             gauge = {
                 'axis': {
                     'range': [-1, 1],
-                    'tickwidth': 1,
+                    'tickwidth': 3,
+                    'tickcolor': "white",
                     'ticktext': ['Far Left', 'Left', 'Center', 'Right', 'Far Right'],
-                    'tickvals': [-0.8, -0.4, 0, 0.4, 0.8]
+                    'tickvals': [-0.8, -0.4, 0, 0.4, 0.8],
+                    'tickfont': {'color': 'white', 'size': 14}
                 },
-                'bar': {'color': self._get_bias_color(bias_score)},
+                'bar': {
+                    'color': get_gradient_color(bias_score),
+                    'thickness': 0.75
+                },
+                'bgcolor': 'rgba(0,0,0,0)',
+                'borderwidth': 2,
+                'bordercolor': "white",
                 'steps': [
-                    {'range': [-1, -0.6], 'color': 'rgba(65, 105, 225, 0.3)'},  # Strong Left
-                    {'range': [-0.6, -0.2], 'color': 'rgba(100, 149, 237, 0.3)'},  # Moderate Left
-                    {'range': [-0.2, 0.2], 'color': 'rgba(169, 169, 169, 0.3)'},  # Center
-                    {'range': [0.2, 0.6], 'color': 'rgba(205, 92, 92, 0.3)'},  # Moderate Right
-                    {'range': [0.6, 1], 'color': 'rgba(178, 34, 34, 0.3)'}  # Strong Right
+                    {'range': [-1, -0.6], 'color': f"{colors['far_left']}30"},
+                    {'range': [-0.6, -0.2], 'color': f"{colors['left']}30"},
+                    {'range': [-0.2, 0.2], 'color': f"{colors['center']}30"},
+                    {'range': [0.2, 0.6], 'color': f"{colors['right']}30"},
+                    {'range': [0.6, 1], 'color': f"{colors['far_right']}30"}
                 ],
                 'threshold': {
-                    'line': {'color': 'white', 'width': 4},
-                    'thickness': 0.75,
+                    'line': {'color': "white", 'width': 5},
+                    'thickness': 0.8,
                     'value': bias_score
                 }
             },
-            title = {'text': "Political Bias Meter", 'font': {'size': 24, 'color': 'white'}}
+            title = {
+                'text': "Political Bias Meter",
+                'font': {'size': 24, 'color': 'white'},
+                'align': 'center'
+            },
+            number = {
+                'font': {'size': 50, 'color': get_gradient_color(bias_score)},
+                'prefix': "",
+                'suffix': ""
+            }
         ))
         
-        # Update layout
+        # Add dynamic animations and styling
         fig.update_layout(
-            height=400,
+            height=450,
             margin=dict(l=20, r=20, t=70, b=20),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            font={'color': 'white', 'size': 16}
+            font={'color': 'white', 'size': 16},
+            annotations=[
+                dict(
+                    text=f"Bias Score: {bias_score:.2f}",
+                    x=0.5,
+                    y=0.1,
+                    showarrow=False,
+                    font={'size': 20, 'color': get_gradient_color(bias_score)}
+                )
+            ]
+        )
+        
+        # Add animation frames
+        fig.update_traces(
+            selector=dict(type='indicator'),
+            delta_increasing={'color': colors['far_right']},
+            delta_decreasing={'color': colors['far_left']},
+            animatescale=True
         )
         
         # Display the figure
         st.plotly_chart(fig, use_container_width=True)
         
-        # Display bias category with emoji
+        # Display bias category with emoji and dynamic styling
         bias_category = self._get_bias_category(bias_score)
         category_emojis = {
             "far_left": "⬅️",
@@ -135,13 +192,46 @@ class BiasAnalyzer:
             "far_right": "➡️"
         }
         
+        # Create dynamic category display
         st.markdown(
-            f"### {category_emojis.get(bias_category, '🎯')} Bias Category: "
-            f"_{bias_category.replace('_', ' ').title()}_"
+            f"""
+            <div style='
+                text-align: center;
+                padding: 20px;
+                border-radius: 10px;
+                background-color: {get_gradient_color(bias_score)}20;
+                border: 2px solid {get_gradient_color(bias_score)};
+                margin: 10px 0;
+            '>
+                <h2 style='color: {get_gradient_color(bias_score)}; margin: 0;'>
+                    {category_emojis.get(bias_category, '🎯')} 
+                    {bias_category.replace('_', ' ').title()}
+                </h2>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
         
-        # Display key bias indicators
-        if "bias_indicators" in bias_results:
-            st.subheader("Key Bias Indicators")
-            for indicator in bias_results["bias_indicators"]:
-                st.markdown(f"- {indicator}")
+        # Add interpretation
+        interpretations = {
+            "far_left": "Strong liberal/progressive bias detected",
+            "left": "Moderate liberal bias detected",
+            "center": "Relatively balanced perspective",
+            "right": "Moderate conservative bias detected",
+            "far_right": "Strong conservative bias detected"
+        }
+        
+        st.markdown(
+            f"""
+            <div style='
+                text-align: center;
+                font-style: italic;
+                color: #B0B0B0;
+                margin-top: 10px;
+            '>
+                {interpretations.get(bias_category, "Interpretation unavailable")}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
