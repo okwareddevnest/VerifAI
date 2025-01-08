@@ -31,6 +31,16 @@ from backend.bias_analysis import BiasDetector
 from frontend.components.bias_meter import BiasAnalyzer
 from frontend.components.results_display import ResultsDisplay
 
+@st.cache_resource
+def initialize_components():
+    """Initialize components with caching to prevent multiple initializations"""
+    return {
+        "searcher": NewsSearcher(),
+        "bias_detector": BiasDetector(),
+        "bias_meter": BiasAnalyzer(),
+        "results_display": ResultsDisplay()
+    }
+
 def main():
     st.set_page_config(
         page_title="VerifAI: Media Bias & Fake News Detector",
@@ -44,11 +54,12 @@ def main():
     Enter a URL or paste article text below to get started.
     """)
     
-    # Initialize components
-    searcher = NewsSearcher()
-    bias_detector = BiasDetector()
-    bias_meter = BiasAnalyzer()
-    results_display = ResultsDisplay()
+    # Initialize components using cached function
+    components = initialize_components()
+    searcher = components["searcher"]
+    bias_detector = components["bias_detector"]
+    bias_meter = components["bias_meter"]
+    results_display = components["results_display"]
     
     # Sidebar settings
     with st.sidebar:
