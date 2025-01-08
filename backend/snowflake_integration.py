@@ -54,6 +54,9 @@ class SnowflakeManager:
         
         # After connection is established, set up database and schema
         self._ensure_database_exists()
+        
+        # Set up required tables
+        self.setup_tables()
     
     def _ensure_database_exists(self):
         """Ensure database and schema exist"""
@@ -127,11 +130,23 @@ class SnowflakeManager:
             CREATE TABLE IF NOT EXISTS ANALYSIS_RESULTS (
                 article_id VARCHAR NOT NULL,
                 bias_score FLOAT,
-                confidence FLOAT,
+                political_leaning VARCHAR,
                 sentiment VARCHAR,
                 analysis_data VARIANT,
                 created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
                 FOREIGN KEY (article_id) REFERENCES NEWS_ARTICLES(id)
+            )
+            """)
+            
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ARTICLE_RELATIONSHIPS (
+                source_id VARCHAR NOT NULL,
+                related_id VARCHAR NOT NULL,
+                similarity_score FLOAT,
+                created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+                PRIMARY KEY (source_id, related_id),
+                FOREIGN KEY (source_id) REFERENCES NEWS_ARTICLES(id),
+                FOREIGN KEY (related_id) REFERENCES NEWS_ARTICLES(id)
             )
             """)
             
@@ -306,10 +321,13 @@ class SnowflakeManager:
                     article.get('score', 0.0)
                 ))
             
+            # Commit the transaction
+            self.conn.commit()
             return analysis_id
             
         except Exception as e:
             print(f"Error storing analysis: {str(e)}")
+            self.conn.rollback()
             raise
         finally:
             cursor.close()

@@ -115,10 +115,10 @@ def generate_report_pdf(article_data: Dict, bias_results: Dict, related_articles
     buffer.close()
     return pdf_data
 
-def save_analysis(article_data: Dict, bias_results: Dict, related_articles: List[Dict]) -> None:
+def save_analysis(article_data: Dict, bias_results: Dict, related_articles: List[Dict], snowflake_manager) -> None:
     """Save analysis results to Snowflake database"""
     try:
-        analysis_id = components["searcher"].snowflake.store_analysis(
+        analysis_id = snowflake_manager.store_analysis(
             article_data=article_data,
             bias_results=bias_results,
             related_articles=related_articles
@@ -370,7 +370,12 @@ def main():
                 if st.button("📧 Share Results"):
                     with st.spinner("Generating shareable link..."):
                         # Save analysis and get ID
-                        analysis_id = save_analysis(article_data, bias_results, related_articles)
+                        analysis_id = save_analysis(
+                            article_data,
+                            bias_results,
+                            related_articles,
+                            components["searcher"].snowflake
+                        )
                         if analysis_id:
                             share_link = share_results(analysis_id)
                             st.success(f"Share this link: {share_link}")
@@ -380,7 +385,12 @@ def main():
             with col3:
                 if st.button("💾 Save Analysis"):
                     with st.spinner("Saving analysis..."):
-                        analysis_id = save_analysis(article_data, bias_results, related_articles)
+                        analysis_id = save_analysis(
+                            article_data,
+                            bias_results,
+                            related_articles,
+                            components["searcher"].snowflake
+                        )
                         if analysis_id:
                             st.success(f"Analysis saved successfully! ID: {analysis_id}")
 
