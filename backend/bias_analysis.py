@@ -12,7 +12,7 @@ class BiasDetector:
         nltk.download('vader_lexicon')
         
         # Initialize sentiment analyzer
-        self.sentiment_analyzer = SentimentIntensityAnalyzer()
+        self.sia = SentimentIntensityAnalyzer()
         
         # Initialize Snowflake manager
         self.snowflake = SnowflakeManager()
@@ -61,7 +61,7 @@ class BiasDetector:
     
     def _analyze_sentiment(self, text: str) -> Dict[str, float]:
         """Analyze the sentiment of the text"""
-        scores = self.sentiment_analyzer.polarity_scores(text)
+        scores = self.sia.polarity_scores(text)
         
         # Determine overall sentiment
         if scores['compound'] >= 0.05:
@@ -97,50 +97,62 @@ class BiasDetector:
             'emotional_score': emotional_score
         }
     
-    def analyze(self, article_data: Dict, related_articles: List[Dict],
-                fact_check_threshold: float = 0.7) -> Dict:
-        """Perform comprehensive bias analysis"""
-        text = article_data['text']
-        
-        # Analyze sentiment
-        sentiment_results = self._analyze_sentiment(text)
-        
-        # Analyze language patterns
-        language_results = self._analyze_language_patterns(text)
-        
-        # Get Mistral analysis
-        llm_results = self.snowflake.generate_analysis(
-            article_text=text,
-            related_articles=related_articles,
-            system_prompt=self.system_prompt
-        )
-        
-        # Combine results
-        analysis_results = {
-            'bias_score': llm_results.get('bias_score', 0.0),
-            'confidence': llm_results.get('confidence', 0.8),
-            'sentiment': sentiment_results['sentiment'],
-            'language_analysis': {
-                'emotional_scores': sentiment_results['scores'],
-                'style_metrics': {
-                    'emotional_language': language_results['emotional_score'],
-                    'loaded_words': sum(language_results['indicator_counts'].values()) / 100
-                }
-            },
-            'bias_indicators': [
-                f"Found {count} instances of {category.replace('_', ' ')}"
-                for category, count in language_results['indicator_counts'].items()
-                if count > 0
-            ] + llm_results.get('bias_indicators', {}).get('language_patterns', []),
-            'key_takeaways': llm_results.get('key_findings', []),
-            'recommendations': llm_results.get('recommendations', []),
-            'source_analysis': {
-                'credibility': llm_results.get('bias_indicators', {}).get('source_credibility', 'Unknown'),
-                'fact_consistency': llm_results.get('bias_indicators', {}).get('fact_consistency', 'Unknown')
+    def analyze(self, article_data: Dict, related_articles: List[Dict] = None) -> Dict:
+        """Analyze article for bias and generate results"""
+        if not article_data:
+            return {
+                "error": "No article data provided",
+                "bias_score": 0.5,
+                "political_leaning": "unknown",
+                "sentiment": "neutral"
             }
-        }
         
-        return analysis_results
+        try:
+            # Get article text
+            article_text = article_data.get('text', '')
+            if not article_text:
+                return {
+                    "error": "No article text found",
+                    "bias_score": 0.5,
+                    "political_leaning": "unknown",
+                    "sentiment": "neutral"
+                }
+            
+            # Perform sentiment analysis
+            sentiment_scores = self.sia.polarity_scores(article_text)
+            
+            # Get base analysis from Snowflake
+            llm_results = self.snowflake.generate_analysis(
+                article_text=article_text,
+                related_articles=related_articles or []
+            )
+            
+            # Combine results
+            analysis_results = {
+                **llm_results,
+                "sentiment_scores": sentiment_scores,
+                "sentiment": self._get_sentiment_label(sentiment_scores['compound'])
+            }
+            
+            return analysis_results
+            
+        except Exception as e:
+            print(f"Error in bias analysis: {str(e)}")
+            return {
+                "error": str(e),
+                "bias_score": 0.5,
+                "political_leaning": "unknown",
+                "sentiment": "neutral"
+            }
+    
+    def _get_sentiment_label(self, compound_score: float) -> str:
+        """Convert compound sentiment score to a label"""
+        if compound_score >= 0.05:
+            return "positive"
+        elif compound_score <= -0.05:
+            return "negative"
+        else:
+            return "neutral"
     
     def __del__(self):
         """Cleanup Snowflake resources"""

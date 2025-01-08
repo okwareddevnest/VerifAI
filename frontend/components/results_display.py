@@ -1,90 +1,54 @@
 import streamlit as st
 import pandas as pd
+from typing import Dict, List
 
 class ResultsDisplay:
     def __init__(self):
-        self.sentiment_colors = {
-            "positive": "🟢",
-            "neutral": "⚪",
-            "negative": "🔴"
-        }
-    
-    def _display_summary(self, summary):
-        st.subheader("Article Summary")
-        st.write(summary)
-    
-    def _display_fact_checks(self, fact_checks):
-        st.subheader("Fact Check Results")
+        """Initialize the results display component"""
+        pass
         
-        for fact in fact_checks:
-            with st.expander(f"Claim: {fact['claim']}", expanded=True):
-                st.markdown(f"""
-                **Verdict:** {fact['verdict']}  
-                **Confidence:** {fact['confidence']:.1%}  
-                **Source:** {fact['source']}
-                """)
-                
-                if fact.get('explanation'):
-                    st.markdown("**Explanation:**")
-                    st.write(fact['explanation'])
-    
-    def _display_related_articles(self, related_articles):
-        st.subheader("Related Articles")
+    def show_results(self, article_data: Dict, related_articles: List[Dict], bias_results: Dict):
+        """Display the analysis results in the Streamlit UI"""
+        st.header("Analysis Results")
         
-        # Create a dataframe for better display
-        df = pd.DataFrame(related_articles)
-        
-        for idx, article in df.iterrows():
-            with st.expander(f"{article['title']}", expanded=False):
-                st.markdown(f"""
-                **Source:** {article['source']}  
-                **Date:** {article['date']}  
-                **Agreement Score:** {article['agreement_score']:.1%}  
-                **Sentiment:** {self.sentiment_colors[article['sentiment']]} {article['sentiment'].title()}
-                
-                {article['summary']}
-                
-                [Read Full Article]({article['url']})
-                """)
-    
-    def _display_language_analysis(self, language_analysis):
-        st.subheader("Language Analysis")
-        
+        # Display error if present
+        if "error" in bias_results:
+            st.error(f"Analysis Error: {bias_results['error']}")
+            return
+            
+        # Display bias score and political leaning
         col1, col2 = st.columns(2)
-        
         with col1:
-            st.markdown("**Emotional Language**")
-            for emotion, score in language_analysis['emotional_scores'].items():
-                st.progress(score, text=f"{emotion.title()}: {score:.1%}")
-        
+            st.metric("Bias Score", f"{bias_results.get('bias_score', 0.5):.2f}")
         with col2:
-            st.markdown("**Writing Style**")
-            for style, score in language_analysis['style_metrics'].items():
-                st.progress(score, text=f"{style.title()}: {score:.1%}")
-    
-    def show_analysis(self, results):
-        """Display the complete analysis results in a structured format"""
-        
-        # Main container for results
-        with st.container():
-            # Display article summary
-            if "summary" in results:
-                self._display_summary(results["summary"])
+            st.metric("Political Leaning", bias_results.get('political_leaning', 'Unknown'))
             
-            # Display fact checking results
-            if "fact_checks" in results:
-                self._display_fact_checks(results["fact_checks"])
+        # Display sentiment analysis
+        st.subheader("Sentiment Analysis")
+        sentiment_scores = bias_results.get('sentiment_scores', {})
+        cols = st.columns(4)
+        with cols[0]:
+            st.metric("Positive", f"{sentiment_scores.get('pos', 0):.2f}")
+        with cols[1]:
+            st.metric("Neutral", f"{sentiment_scores.get('neu', 0):.2f}")
+        with cols[2]:
+            st.metric("Negative", f"{sentiment_scores.get('neg', 0):.2f}")
+        with cols[3]:
+            st.metric("Overall", bias_results.get('sentiment', 'neutral'))
             
-            # Display language analysis
-            if "language_analysis" in results:
-                self._display_language_analysis(results["language_analysis"])
-            
-            # Display related articles
-            if "related_articles" in results:
-                self._display_related_articles(results["related_articles"])
-            
-            # Display key takeaways
-            if "key_takeaways" in results:
-                st.subheader("Key Takeaways")
-                for takeaway in results["key_takeaways"]:
-                    st.markdown(f"- {takeaway}")
+        # Display bias indicators
+        if bias_results.get('bias_indicators'):
+            st.subheader("Bias Indicators")
+            for indicator in bias_results['bias_indicators']:
+                st.info(indicator)
+                
+        # Display related articles
+        if related_articles:
+            st.subheader("Related Articles")
+            for article in related_articles:
+                with st.expander(article.get('metadata', {}).get('title', 'Related Article')):
+                    st.write(f"Source: {article.get('metadata', {}).get('domain', 'Unknown')}")
+                    st.write(f"Similarity Score: {article.get('score', 0):.2f}")
+                    st.write(article.get('metadata', {}).get('content', '')[:500] + "...")
+                    if article.get('metadata', {}).get('url'):
+                        st.markdown(f"[Read more]({article['metadata']['url']})")

@@ -1,6 +1,7 @@
 import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
+from typing import Dict
 
 class BiasAnalyzer:
     def __init__(self):
@@ -59,28 +60,85 @@ class BiasAnalyzer:
                 return category
         return "far_right" if bias_score >= 1.0 else "far_left"
     
-    def display_bias_meter(self, bias_results):
-        st.subheader("Bias Analysis")
+    def _get_bias_color(self, bias_score: float) -> str:
+        """Get color for bias score visualization"""
+        if bias_score <= -0.6:
+            return 'rgb(65, 105, 225)'  # Strong Left (Blue)
+        elif bias_score <= -0.2:
+            return 'rgb(100, 149, 237)'  # Moderate Left (Light Blue)
+        elif bias_score <= 0.2:
+            return 'rgb(169, 169, 169)'  # Center (Gray)
+        elif bias_score <= 0.6:
+            return 'rgb(205, 92, 92)'  # Moderate Right (Light Red)
+        else:
+            return 'rgb(178, 34, 34)'  # Strong Right (Red)
+            
+    def display_bias_meter(self, bias_score: float):
+        """Display the bias meter visualization"""
+        st.subheader("⚖️ Bias Analysis")
         
-        # Extract the overall bias score from results
-        bias_score = bias_results.get("bias_score", 0)
+        # Ensure bias_score is a float and within bounds
+        try:
+            bias_score = float(bias_score)
+            bias_score = max(-1.0, min(1.0, bias_score))
+        except (TypeError, ValueError):
+            bias_score = 0.0
+            
+        # Create the meter visualization
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = bias_score,
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            gauge = {
+                'axis': {
+                    'range': [-1, 1],
+                    'tickwidth': 1,
+                    'ticktext': ['Far Left', 'Left', 'Center', 'Right', 'Far Right'],
+                    'tickvals': [-0.8, -0.4, 0, 0.4, 0.8]
+                },
+                'bar': {'color': self._get_bias_color(bias_score)},
+                'steps': [
+                    {'range': [-1, -0.6], 'color': 'rgba(65, 105, 225, 0.3)'},  # Strong Left
+                    {'range': [-0.6, -0.2], 'color': 'rgba(100, 149, 237, 0.3)'},  # Moderate Left
+                    {'range': [-0.2, 0.2], 'color': 'rgba(169, 169, 169, 0.3)'},  # Center
+                    {'range': [0.2, 0.6], 'color': 'rgba(205, 92, 92, 0.3)'},  # Moderate Right
+                    {'range': [0.6, 1], 'color': 'rgba(178, 34, 34, 0.3)'}  # Strong Right
+                ],
+                'threshold': {
+                    'line': {'color': 'white', 'width': 4},
+                    'thickness': 0.75,
+                    'value': bias_score
+                }
+            },
+            title = {'text': "Political Bias Meter", 'font': {'size': 24, 'color': 'white'}}
+        ))
         
-        # Create three columns for layout
-        col1, col2, col3 = st.columns([1, 2, 1])
+        # Update layout
+        fig.update_layout(
+            height=400,
+            margin=dict(l=20, r=20, t=70, b=20),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font={'color': 'white', 'size': 16}
+        )
         
-        with col2:
-            # Display the gauge chart
-            fig = self._create_gauge(bias_score)
-            st.plotly_chart(fig, use_container_width=True)
+        # Display the figure
+        st.plotly_chart(fig, use_container_width=True)
         
-        # Display bias category and confidence
+        # Display bias category with emoji
         bias_category = self._get_bias_category(bias_score)
-        confidence = bias_results.get("confidence", 0.0)
+        category_emojis = {
+            "far_left": "⬅️",
+            "left": "↖️",
+            "center": "⬆️",
+            "right": "↗️",
+            "far_right": "➡️"
+        }
         
-        st.markdown(f"""
-        **Bias Category:** {bias_category.replace('_', ' ').title()}  
-        **Confidence:** {confidence:.1%}
-        """)
+        st.markdown(
+            f"### {category_emojis.get(bias_category, '🎯')} Bias Category: "
+            f"_{bias_category.replace('_', ' ').title()}_"
+        )
         
         # Display key bias indicators
         if "bias_indicators" in bias_results:

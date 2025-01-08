@@ -80,15 +80,8 @@ class SnowflakeManager:
             USE SCHEMA ML
             """)
             
-            # Create and use warehouse if specified
+            # Use warehouse if specified
             if os.getenv("SNOWFLAKE_WAREHOUSE"):
-                cursor.execute(f"""
-                CREATE WAREHOUSE IF NOT EXISTS {os.getenv("SNOWFLAKE_WAREHOUSE")}
-                WITH WAREHOUSE_SIZE = 'XSMALL'
-                AUTO_SUSPEND = 60
-                AUTO_RESUME = TRUE
-                """)
-                
                 cursor.execute(f"""
                 USE WAREHOUSE {os.getenv("SNOWFLAKE_WAREHOUSE")}
                 """)
@@ -172,15 +165,18 @@ class SnowflakeManager:
             
             # Generate and store embedding
             text = f"{article_data.get('title', '')} {article_data.get('text', '')}"
-            embedding = self.model.encode(text).tolist()
+            embedding = self.model.encode(text)
             
-            # Convert embedding to Snowflake array format
+            # Convert numpy array to list of floats and then to string
+            embedding_str = ','.join(map(str, embedding.tolist()))
+            
+            # Store embedding
             cursor.execute("""
             INSERT INTO ARTICLE_EMBEDDINGS (article_id, embedding)
-            SELECT %s, ARRAY_CONSTRUCT(%s)
+            SELECT %s, ARRAY_CONSTRUCT_FROM_STRING(%s, ',')
             """, (
                 article_id,
-                ','.join(map(str, embedding))
+                embedding_str
             ))
             
             return article_id
@@ -194,34 +190,44 @@ class SnowflakeManager:
         
         try:
             # Generate query embedding
-            query_embedding = self.model.encode(query).tolist()
+            query_embedding = np.array(self.model.encode(query))
             
             # Fetch all articles and embeddings
             cursor.execute("""
             SELECT 
                 a.id, a.title, a.content, a.url, a.domain,
-                e.embedding
+                ARRAY_TO_STRING(e.embedding, ',') as embedding_str
             FROM NEWS_ARTICLES a
             JOIN ARTICLE_EMBEDDINGS e ON a.id = e.article_id
             """)
             
             results = []
             for row in cursor.fetchall():
-                article_embedding = np.array(row[5])
-                similarity = np.dot(query_embedding, article_embedding) / (
-                    np.linalg.norm(query_embedding) * np.linalg.norm(article_embedding)
-                )
-                
-                results.append({
-                    "score": float(similarity),
-                    "metadata": {
-                        "id": row[0],
-                        "title": row[1],
-                        "content": row[2],
-                        "url": row[3],
-                        "domain": row[4]
-                    }
-                })
+                try:
+                    # Convert embedding string to numpy array
+                    embedding_values = [float(x) for x in row[5].split(',')]
+                    article_embedding = np.array(embedding_values)
+                    
+                    # Ensure both embeddings have the same shape
+                    if query_embedding.shape == article_embedding.shape:
+                        # Calculate cosine similarity
+                        similarity = np.dot(query_embedding, article_embedding) / (
+                            np.linalg.norm(query_embedding) * np.linalg.norm(article_embedding)
+                        )
+                        
+                        results.append({
+                            "score": float(similarity),
+                            "metadata": {
+                                "id": row[0],
+                                "title": row[1],
+                                "content": row[2],
+                                "url": row[3],
+                                "domain": row[4]
+                            }
+                        })
+                except (ValueError, TypeError, AttributeError) as e:
+                    print(f"Error processing embedding: {str(e)}")
+                    continue
             
             # Sort by similarity and return top_k
             results.sort(key=lambda x: x["score"], reverse=True)
@@ -253,4 +259,69 @@ class SnowflakeManager:
     def close(self):
         """Close Snowflake connection"""
         if self.conn:
-            self.conn.close() 
+            self.conn.close()
+    
+    def generate_analysis(self, article_text: str, related_articles: List[Dict], prompt_template: str = None) -> Dict:
+        """Generate analysis using basic NLP techniques"""
+        try:
+            # Calculate basic metrics
+            words = article_text.lower().split()
+            total_words = len(words)
+            
+            # Define bias indicators
+            bias_indicators = {
+                'emotional': ['outrageous', 'shocking', 'terrible', 'amazing', 'incredible'],
+                'partisan': ['leftist', 'rightist', 'liberal', 'conservative', 'radical'],
+                'loaded': ['regime', 'elite', 'conspiracy', 'propaganda']
+            }
+            
+            # Count bias indicators
+            bias_counts = {category: sum(1 for word in words if word in terms) 
+                         for category, terms in bias_indicators.items()}
+            
+            # Calculate bias score based on indicator presence
+            total_bias_words = sum(bias_counts.values())
+            bias_score = min(1.0, total_bias_words / (total_words * 0.1)) if total_words > 0 else 0.5
+            
+            # Determine political leaning based on word usage
+            partisan_words = {
+                'left': ['progressive', 'liberal', 'democrat', 'socialism'],
+                'right': ['conservative', 'republican', 'traditional', 'freedom']
+            }
+            
+            left_count = sum(1 for word in words if word in partisan_words['left'])
+            right_count = sum(1 for word in words if word in partisan_words['right'])
+            
+            if abs(left_count - right_count) < 2:
+                leaning = "center"
+            elif left_count > right_count:
+                leaning = "left" if left_count - right_count > 3 else "center-left"
+            else:
+                leaning = "right" if right_count - left_count > 3 else "center-right"
+            
+            # Collect bias indicators found
+            found_indicators = []
+            for category, count in bias_counts.items():
+                if count > 0:
+                    found_indicators.append(f"Found {count} {category} language patterns")
+            
+            # Compare with related articles
+            source_comparison = "Multiple sources available" if len(related_articles) > 2 else "Limited sources"
+            
+            return {
+                "bias_score": bias_score,
+                "political_leaning": leaning,
+                "bias_indicators": found_indicators,
+                "sentiment": "neutral",  # This will be updated by VADER in BiasDetector
+                "factual_accuracy": "Based on available sources",
+                "source_comparison": source_comparison
+            }
+            
+        except Exception as e:
+            print(f"Error in analysis: {str(e)}")
+            return {
+                "error": str(e),
+                "bias_score": 0.5,
+                "political_leaning": "unknown",
+                "sentiment": "neutral"
+            } 

@@ -45,62 +45,123 @@ def main():
     st.set_page_config(
         page_title="VerifAI: Media Bias & Fake News Detector",
         page_icon="🔍",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="expanded"
     )
     
-    st.title("VerifAI: Media Bias & Fake News Detector")
+    # Custom CSS for better styling
     st.markdown("""
-    Verify news articles by cross-referencing multiple sources and analyzing potential bias in language.
-    Enter a URL or paste article text below to get started.
-    """)
-    
-    # Initialize components using cached function
-    components = initialize_components()
-    searcher = components["searcher"]
-    bias_detector = components["bias_detector"]
-    bias_meter = components["bias_meter"]
-    results_display = components["results_display"]
+        <style>
+        .main-header {
+            color: #4CAF50;
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 1em;
+        }
+        .subheader {
+            color: #7c7c7c;
+            font-size: 1.2em;
+            margin-bottom: 2em;
+        }
+        .stTextInput > div > div > input {
+            background-color: #2b2b2b;
+            color: white;
+        }
+        .stTextArea > div > div > textarea {
+            background-color: #2b2b2b;
+            color: white;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     
     # Sidebar settings
     with st.sidebar:
-        st.header("Analysis Settings")
-        search_depth = st.slider("Search Depth", min_value=3, max_value=10, value=5,
-                               help="Number of related articles to analyze")
-        fact_check_confidence = st.slider("Fact-Check Confidence", min_value=0.0, max_value=1.0, value=0.7,
-                                        help="Minimum confidence threshold for fact-checking")
+        st.header("🛠️ Analysis Settings")
+        st.markdown("---")
+        
+        search_depth = st.slider(
+            "🔍 Search Depth",
+            min_value=3,
+            max_value=10,
+            value=5,
+            help="Number of related articles to analyze"
+        )
+        
+        fact_check_confidence = st.slider(
+            "✅ Fact-Check Confidence",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.7,
+            help="Minimum confidence threshold for fact-checking"
+        )
+        
+        st.markdown("---")
+        st.markdown("### 🎯 How it works")
+        st.markdown("""
+        1. 📝 Paste your article text
+        2. 🤖 AI analyzes the content
+        3. 🔄 Cross-references sources
+        4. 📊 Generates bias report
+        """)
     
-    # Input section
-    input_type = st.radio("Input Type", ["Article URL", "Article Text"])
+    # Main content
+    st.markdown('<h1 class="main-header">🔍 VerifAI: Media Bias & Fake News Detector</h1>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="subheader">Verify news articles by cross-referencing multiple sources and analyzing potential bias in language. '
+        'Enter your article text below to get started.</p>',
+        unsafe_allow_html=True
+    )
     
-    if input_type == "Article URL":
-        article_url = st.text_input("Enter article URL")
-        if article_url:
-            with st.spinner("Analyzing article..."):
-                # Process URL
-                article_data = searcher.process_url(article_url)
-                if article_data:
-                    # Find related articles
-                    related_articles = searcher.find_related(article_data, top_k=search_depth)
-                    # Analyze bias
-                    bias_results = bias_detector.analyze(article_data, related_articles)
-                    # Display results
-                    results_display.show_results(article_data, related_articles, bias_results)
-                    bias_meter.display_bias_meter(bias_results["bias_score"])
-                else:
-                    st.error("Could not process the article URL. Please check the URL and try again.")
-    else:
-        article_text = st.text_area("Enter article text")
-        if article_text:
-            with st.spinner("Analyzing text..."):
-                # Process text
-                article_data = {"text": article_text}
-                # Find related articles
-                related_articles = searcher.find_related(article_data, top_k=search_depth)
-                # Analyze bias
-                bias_results = bias_detector.analyze(article_data, related_articles)
-                # Display results
-                results_display.show_results(article_data, related_articles, bias_results)
-                bias_meter.display_bias_meter(bias_results["bias_score"])
+    # Initialize components
+    components = initialize_components()
+    
+    # Article text input with placeholder
+    text = st.text_area(
+        "📝 Enter article text",
+        height=200,
+        placeholder="Paste your article text here...",
+        help="Paste the full text of the article you want to analyze"
+    )
+    
+    if text:
+        with st.spinner("🔄 Analyzing article..."):
+            article_data = {"text": text, "title": text[:50] + "..."}
+            
+            # Search for related articles
+            related_articles = components["searcher"].find_related(
+                article_data,
+                top_k=search_depth
+            )
+            
+            # Analyze bias
+            bias_results = components["bias_detector"].analyze(
+                article_data,
+                related_articles
+            )
+            
+            # Create tabs for different result sections
+            tabs = st.tabs(["📊 Analysis Results", "🔍 Related Articles", "⚖️ Bias Meter"])
+            
+            with tabs[0]:
+                components["results_display"].show_results(
+                    article_data,
+                    related_articles,
+                    bias_results
+                )
+                
+            with tabs[1]:
+                if related_articles:
+                    for article in related_articles:
+                        with st.expander(f"📰 {article.get('metadata', {}).get('title', 'Related Article')}"):
+                            st.write(f"🌐 Source: {article.get('metadata', {}).get('domain', 'Unknown')}")
+                            st.write(f"📈 Similarity Score: {article.get('score', 0):.2f}")
+                            st.write(article.get('metadata', {}).get('content', '')[:500] + "...")
+                            if article.get('metadata', {}).get('url'):
+                                st.markdown(f"🔗 [Read full article]({article['metadata']['url']})")
+                                
+            with tabs[2]:
+                if "bias_score" in bias_results:
+                    components["bias_meter"].display_bias_meter(bias_results["bias_score"])
 
 if __name__ == "__main__":
     main()
